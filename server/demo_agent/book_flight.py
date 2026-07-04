@@ -14,7 +14,7 @@ import os
 import sys
 import urllib.request
 
-from .flight_agent import DEMO_GOAL, FlightAgent
+from .flight_agent import DEMO_GOAL
 
 PROXY = os.environ.get("REWIND_PROXY", "http://localhost:8000")
 
@@ -30,10 +30,8 @@ def _post(url: str, payload: dict, headers: dict[str, str] | None = None) -> dic
 
 
 def main() -> int:
-    agent = FlightAgent()
+    # The seed endpoint runs the failing demo loop server-side and returns it.
     session_id = _post(f"{PROXY}/api/demo/seed", {})["session"]["id"]
-    # The seed endpoint already ran the loop server-side; just report it.
-    events = _post(f"{PROXY}/api/sessions/{session_id}/events", {}) if False else None
     print(f"Recorded demo session: {session_id}")
     print(f"Goal: {DEMO_GOAL}")
     print("Open the UI, scrub to the get_seats step, edit in a seat, and fork.")

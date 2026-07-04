@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .models import Event, EventType
+from .models import EventType
 from .store import EventStore
 
 
