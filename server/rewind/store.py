@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import uuid
 from pathlib import Path
 from typing import Any
@@ -53,7 +54,10 @@ class EventStore:
     def __init__(self, db_path: str | Path = ":memory:") -> None:
         self._db_path = str(db_path)
         # An in-memory DB only survives as long as its connection, so for
-        # ``:memory:`` we hold one open connection for the store's lifetime.
+        # ``:memory:`` we hold one open connection for the store's lifetime. That
+        # connection is shared across FastAPI's threadpool, so it's opened with
+        # check_same_thread=False and every use is serialized by ``_lock``.
+        self._lock = threading.Lock()
         self._shared: sqlite3.Connection | None = (
             self._connect() if self._db_path == ":memory:" else None
         )
@@ -63,7 +67,7 @@ class EventStore:
     # -- connection plumbing -------------------------------------------------
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self._db_path)
+        conn = sqlite3.connect(self._db_path, check_same_thread=False)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         return conn
@@ -73,17 +77,26 @@ class EventStore:
             self._store = store
             self._own = store._shared is None
             self._conn = store._shared or store._connect()
+            # Only the shared in-memory connection needs cross-thread locking;
+            # per-call connections are confined to one thread already.
+            self._lock = store._lock if not self._own else None
 
         def __enter__(self) -> sqlite3.Cursor:
+            if self._lock is not None:
+                self._lock.acquire()
             return self._conn.cursor()
 
         def __exit__(self, exc_type, exc, tb) -> None:
-            if exc_type is None:
-                self._conn.commit()
-            else:
-                self._conn.rollback()
-            if self._own:
-                self._conn.close()
+            try:
+                if exc_type is None:
+                    self._conn.commit()
+                else:
+                    self._conn.rollback()
+                if self._own:
+                    self._conn.close()
+            finally:
+                if self._lock is not None:
+                    self._lock.release()
 
     def _cursor(self) -> "EventStore._CursorCtx":
         return EventStore._CursorCtx(self)

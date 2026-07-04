@@ -47,9 +47,13 @@ class ReplayController:
     to serve the recorded response.
     """
 
-    def __init__(self, store: EventStore, parent_session_id: str) -> None:
+    def __init__(
+        self, store: EventStore, parent_session_id: str, *, start_index: int = 0
+    ) -> None:
         self._parent_requests = _request_response_pairs(store, parent_session_id)
-        self._call_index = 0
+        # A fork already contains the prefix's model calls, so replay resumes at
+        # the parent call index just past them.
+        self._call_index = start_index
         self._diverged = False
 
     def decide(self, request_fingerprint: str) -> ReplayDecision:
